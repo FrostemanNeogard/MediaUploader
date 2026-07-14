@@ -52,10 +52,29 @@ namespace Jellyfin.Plugin.MediaUploader
         }
 
         /// <summary>
-        /// Handles the file upload POST request.
-        /// Accepts a single file via multipart/form-data with the field name "file".
+        /// Returns the configured destination presets for the upload page.
         /// </summary>
-        /// <param name="file">The uploaded file.</param>
+        /// <returns>A list of destination presets (name + path relative to the base upload path).</returns>
+        [HttpGet("Destinations")]
+        [Produces("application/json")]
+        public IActionResult GetDestinations()
+        {
+            var destinations = Plugin.Instance?.Configuration.Destinations
+                ?? new List<DestinationConfig>();
+
+            var result = destinations
+                .Where(d => !string.IsNullOrWhiteSpace(d.Name) && !string.IsNullOrWhiteSpace(d.Path))
+                .Select(d => new DestinationInfo { Name = d.Name, Path = d.Path });
+
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Handles the file upload POST request.
+        /// Accepts one or more files via multipart/form-data (field name "files", or "file" for a single file)
+        /// and an optional "destination" field containing a path relative to the configured base upload directory.
+        /// Folder uploads preserve their relative structure via the file names provided by the browser.
+        /// </summary>
         /// <returns>An IActionResult indicating the result of the upload operation.</returns>
         [HttpPost("Upload")] // Route: /Plugins/MediaUploader/Upload
         [RequestSizeLimit(10L * 1024 * 1024 * 1024)] // Explicit 10 GB total request limit
@@ -63,7 +82,7 @@ namespace Jellyfin.Plugin.MediaUploader
 #pragma warning disable SA1404
         [SuppressMessage("Reliability", "CA2007:Aufruf von \"ConfigureAwait\" für erwarteten Task erwägen", Justification = "<Pending>")] // Matching high limit for multipart section (workaround)
 #pragma warning restore SA1404
-        public async Task<IActionResult> UploadFile(IFormFile file)
+        public async Task<IActionResult> UploadFile()
         {
             _logger.LogInformation("Media Uploader: UploadFile endpoint hit.");
 
@@ -75,79 +94,119 @@ namespace Jellyfin.Plugin.MediaUploader
                 return StatusCode(StatusCodes.Status500InternalServerError, "Upload path is not configured in plugin settings.");
             }
 
-            // Use the configured path as the target directory
-            var targetDirectory = configuredPath;
-            _logger.LogInformation("Media Uploader: Using configured target directory: '{TargetDirectory}'", targetDirectory);
+            // Resolve the base directory that everything must be written under.
+            var baseDirectory = Path.GetFullPath(configuredPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            _logger.LogInformation("Media Uploader: Using configured base directory: '{BaseDirectory}'", baseDirectory);
 
             try
             {
-                // --- 2. Validate Input File ---
-                if (file == null || file.Length == 0)
+                // --- 2. Read the multipart form data ---
+                var form = await Request.ReadFormAsync(CancellationToken.None).ConfigureAwait(false);
+                var formFiles = form.Files;
+
+                // Support both the multi-file field "files" and the legacy single-file field "file".
+                var files = formFiles.GetFiles("files").ToList();
+                var singleFile = formFiles.GetFile("file");
+                if (singleFile != null)
                 {
-                    _logger.LogWarning("Media Uploader: No file uploaded or file is empty.");
-                    return BadRequest("No file uploaded or file is empty.");
+                    files.Add(singleFile);
                 }
 
-                _logger.LogInformation("Media Uploader: Received file '{FileName}' ({Length} bytes), type: '{ContentType}'", file.FileName, file.Length, file.ContentType);
+                var destination = form["destination"].ToString();
 
-                // --- 3. Prepare and Validate Target Path ---
-                var originalFileName = Path.GetFileName(file.FileName); // Extract filename only
-                var safeFileName = _fileSystem.GetValidFilename(originalFileName); // Sanitize filename
-                var fullTargetPath = Path.Combine(targetDirectory, safeFileName);
-                var fullTargetDirectory = Path.GetFullPath(targetDirectory);
-
-                // Security Check: Ensure the resolved path is within the configured directory
-                if (!Path.GetFullPath(fullTargetPath).StartsWith(fullTargetDirectory, StringComparison.OrdinalIgnoreCase))
+                if (files.Count == 0)
                 {
-                    _logger.LogError(
-                        "Media Uploader: Invalid target path generated. Attempted Path: '{AttemptedPath}', Resolved Path: '{ResolvedPath}', Allowed Directory: '{AllowedDirectory}'",
-                        fullTargetPath, // Log the potentially malicious path
-                        Path.GetFullPath(fullTargetPath), // Log the resolved path
-                        fullTargetDirectory);
-                    return StatusCode(StatusCodes.Status500InternalServerError, "Invalid target path.");
+                    _logger.LogWarning("Media Uploader: No file uploaded.");
+                    return BadRequest("No file uploaded.");
                 }
 
-                // --- 4. Save the File ---
-                _logger.LogInformation("Media Uploader: Attempting to save file '{SafeFileName}' to '{FullTargetPath}'", safeFileName, fullTargetPath);
-                try
+                // Build the sanitized relative destination sub-path (e.g. "movies/My Movie (2024)").
+                var destinationRelative = BuildSafeRelativePath(destination);
+
+                // --- 3. Save each file, preserving relative folder structure ---
+                var uploaded = new List<string>();
+                var failed = new List<string>();
+
+                foreach (var file in files)
                 {
-                    // Use async stream operations
-                    await using (var fileStream = new FileStream(fullTargetPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                    if (file == null || file.Length == 0)
                     {
-                        // Copy the uploaded file's stream to the file stream asynchronously
-                        await file.CopyToAsync(fileStream);
+                        _logger.LogWarning("Media Uploader: Skipping empty file entry.");
+                        continue;
+                    }
+
+                    try
+                    {
+                        // The browser may supply a relative path (folder uploads) inside the file name.
+                        var fileRelative = BuildSafeRelativePath(file.FileName);
+
+                        var fullTargetPath = Path.GetFullPath(Path.Combine(baseDirectory, destinationRelative, fileRelative));
+                        var basePrefix = baseDirectory + Path.DirectorySeparatorChar;
+
+                        // Security Check: ensure the resolved path stays within the base directory.
+                        if (!fullTargetPath.StartsWith(basePrefix, StringComparison.OrdinalIgnoreCase))
+                        {
+                            _logger.LogError(
+                                "Media Uploader: Invalid target path generated. Attempted relative '{DestinationRelative}' + '{FileRelative}', resolved to '{ResolvedPath}', base directory '{BaseDirectory}'",
+                                destinationRelative,
+                                fileRelative,
+                                fullTargetPath,
+                                baseDirectory);
+                            failed.Add(file.FileName);
+                            continue;
+                        }
+
+                        var targetDir = Path.GetDirectoryName(fullTargetPath);
+                        if (!string.IsNullOrEmpty(targetDir))
+                        {
+                            Directory.CreateDirectory(targetDir);
+                        }
+
+                        _logger.LogInformation("Media Uploader: Saving '{FileName}' to '{FullTargetPath}'", file.FileName, fullTargetPath);
+                        await using (var fileStream = new FileStream(fullTargetPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                        {
+                            await file.CopyToAsync(fileStream, CancellationToken.None).ConfigureAwait(false);
+                        }
+
+                        uploaded.Add(fullTargetPath);
+                        _logger.LogInformation("Media Uploader: File '{FileName}' saved successfully.", file.FileName);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Media Uploader: Error saving file '{FileName}'", file.FileName);
+                        failed.Add(file.FileName);
                     }
                 }
-                catch (Exception ex)
+
+                if (uploaded.Count == 0)
                 {
-                    // Log specific file saving errors
-                    _logger.LogError(ex, "Media Uploader: Error saving file '{SafeFileName}' to '{FullTargetPath}'", safeFileName, fullTargetPath);
-                    // Re-throw to be caught by the outer catch block, or return a specific error
-                    return StatusCode(StatusCodes.Status500InternalServerError, $"Error saving file: {ex.Message}");
+                    return StatusCode(StatusCodes.Status500InternalServerError, "No files could be saved. Check server logs and permissions.");
                 }
 
-                _logger.LogInformation("Media Uploader: File '{SafeFileName}' successfully saved to '{FullTargetPath}'.", safeFileName, fullTargetPath);
-
-                // --- Optional: Trigger Library Scan ---
-                // Requires ILibraryManager injection in constructor (already done)
-                // Consider making this configurable
-                /*
+                // --- 4. Trigger a library scan (best effort) so new files are picked up ---
                 try
                 {
-                    _logger.LogInformation("Media Uploader: Requesting library validation for path: {TargetDirectory}", targetDirectory);
-                    // ValidateLibraryPath might trigger scans if the path is part of a library
-                    _libraryManager.ValidateLibraryPath(targetDirectory); // Removed CancellationToken for simplicity, add if needed
-                    _logger.LogInformation("Media Uploader: Library validation requested.");
+                    _logger.LogInformation("Media Uploader: Queuing a library scan.");
+                    _libraryManager.QueueLibraryScan();
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Media Uploader: Error requesting library validation for path {TargetDirectory}", targetDirectory);
-                    // Don't fail the whole upload if scan trigger fails
+                    _logger.LogError(ex, "Media Uploader: Error requesting library validation.");
+                    // Don't fail the upload if the scan trigger fails.
                 }
-                */
 
-                // --- 5. Return Success Response ---
-                return Ok($"File {safeFileName} uploaded successfully.");
+                // --- 5. Return a summary result ---
+                var result = new UploadResult
+                {
+                    TotalFiles = files.Count,
+                    UploadedCount = uploaded.Count,
+                    Uploaded = uploaded,
+                    Failed = failed,
+                    Message = $"{uploaded.Count} of {files.Count} file(s) uploaded successfully to '{destinationRelative}'."
+                        + (failed.Count > 0 ? $" {failed.Count} failed." : string.Empty),
+                };
+
+                return Ok(result);
             }
             catch (IOException ioEx) // Handle specific IO errors during file operations
             {
@@ -199,6 +258,57 @@ namespace Jellyfin.Plugin.MediaUploader
                  _logger.LogError(ex, "Media Uploader: Error serving static upload page");
                  return StatusCode(StatusCodes.Status500InternalServerError, "Error serving upload page");
             }
+        }
+
+        /// <summary>
+        /// Builds a sanitized, traversal-safe relative path from user supplied input.
+        /// Each path segment is run through <see cref="IFileSystem.GetValidFilename"/> and
+        /// combined without any ".." segments being able to escape the base directory.
+        /// </summary>
+        /// <param name="inputPath">The raw path supplied by the user or browser.</param>
+        /// <returns>A sanitized relative path, or an empty string when no input is given.</returns>
+        private string BuildSafeRelativePath(string? inputPath)
+        {
+            if (string.IsNullOrWhiteSpace(inputPath))
+            {
+                return string.Empty;
+            }
+
+            var segments = inputPath
+                .Replace('\\', '/')
+                .Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+            var safeSegments = segments
+                .Where(segment => !string.Equals(segment, "..", StringComparison.Ordinal))
+                .Select(segment => _fileSystem.GetValidFilename(segment));
+
+            return Path.Combine(safeSegments.ToArray());
+        }
+
+        /// <summary>
+        /// A named upload destination returned by the Destinations endpoint.
+        /// </summary>
+        private sealed class DestinationInfo
+        {
+            public string Name { get; set; } = string.Empty;
+
+            public string Path { get; set; } = string.Empty;
+        }
+
+        /// <summary>
+        /// The summary returned after an upload request.
+        /// </summary>
+        private sealed class UploadResult
+        {
+            public int TotalFiles { get; set; }
+
+            public int UploadedCount { get; set; }
+
+            public List<string> Uploaded { get; set; } = new List<string>();
+
+            public List<string> Failed { get; set; } = new List<string>();
+
+            public string Message { get; set; } = string.Empty;
         }
     }
 }

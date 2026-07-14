@@ -1,33 +1,37 @@
 ﻿<#
 .SYNOPSIS
-Testet den Jellyfin Media Uploader Plugin API-Endpunkt durch das Hochladen einer Datei.
+Testet den Jellyfin Media Uploader Plugin API-Endpunkt durch das Hochladen einer oder mehrerer Dateien.
 
 .DESCRIPTION
-Sendet eine POST-Anfrage mit einer Datei (multipart/form-data) an den
+Sendet eine POST-Anfrage mit einer oder mehreren Dateien (multipart/form-data) an den
 angegebenen Jellyfin Media Uploader Plugin Endpunkt. Baut den Body manuell auf
 für bessere Kompatibilität mit verschiedenen PowerShell-Versionen.
 
-.PARAMETER FilePath
-Der vollständige Pfad zur Mediendatei, die hochgeladen werden soll.
+.PARAMETER FilePaths
+Ein oder mehrere vollständige Pfade zu den hochzuladenden Mediendateien.
+
+.PARAMETER Destination
+(Optional) Relativer Zielpfad unterhalb des im Plugin konfigurierten Basispfads
+(z.B. "movies" oder "shows/Meine Serie/Staffel 1").
 
 .PARAMETER JellyfinUrl
 Die Basis-URL deiner Jellyfin Instanz (z.B. "http://localhost:8096").
 
 .PARAMETER ApiKey
-(Optional) Dein Jellyfin API-Schlüssel, falls Authentifizierung benötigt wird.
+Dein Jellyfin API-Schlüssel zur Authentifizierung.
 
 .EXAMPLE
-.\MediaUpload.ps1 -FilePath "C:\pfad\zu\deinem\film.mkv"
+.\MediaUpload.ps1 -FilePaths "C:\pfad\film.mkv","C:\pfad\film2.mkv" -Destination "movies"
 
 .EXAMPLE
-.\MediaUpload.ps1 -FilePath "C:\pfad\zu\deinem\film.mkv" -JellyfinUrl "http://192.168.1.100:8096"
-
-.EXAMPLE
-.\MediaUpload.ps1 -FilePath "C:\pfad\zu\deinem\film.mkv" -ApiKey "DEIN_API_KEY_HIER"
+.\MediaUpload.ps1 -FilePaths "C:\pfad\episode.mkv" -Destination "shows/Meine Serie/Staffel 1" -JellyfinUrl "http://192.168.1.100:8096"
 #>
 param(
+    [Parameter(Mandatory=$true)]
+    [string[]]$FilePaths,
+
     [Parameter(Mandatory=$false)]
-    [string]$FilePath = "C:\Users\jakob\Downloads\movie-loader\movies.txt",
+    [string]$Destination = "",
 
     [Parameter(Mandatory=$false)]
     [string]$JellyfinUrl = "http://localhost:8096",
@@ -39,10 +43,12 @@ param(
 # Ziel-URL zusammenbauen
 $uploadUrl = "$($JellyfinUrl.TrimEnd('/'))/Plugins/MediaUploader/Upload"
 
-# Prüfen, ob die Datei existiert
-if (-not (Test-Path -Path $FilePath -PathType Leaf)) {
-    Write-Error "Datei nicht gefunden: $FilePath"
-    return # Skript beenden
+# Prüfen, ob alle Dateien existieren
+foreach ($fp in $FilePaths) {
+    if (-not (Test-Path -Path $fp -PathType Leaf)) {
+        Write-Error "Datei nicht gefunden: $fp"
+        return # Skript beenden
+    }
 }
 
 # Header vorbereiten
@@ -54,54 +60,72 @@ if (-not [string]::IsNullOrEmpty($ApiKey)) {
     Write-Host "Versuche Upload ohne API Key."
 }
 
-Write-Host "Versuche '$FilePath' nach '$uploadUrl' hochzuladen..."
+if (-not [string]::IsNullOrEmpty($Destination)) {
+    Write-Host "Ziel (relativ): $Destination"
+}
+
+Write-Host "Versuche $($FilePaths.Count) Datei(en) nach '$uploadUrl' hochzuladen..."
 
 # --- Multipart/form-data Body manuell erstellen ---
 $boundary = "---------------------------$([System.Guid]::NewGuid().ToString())"
 $contentType = "multipart/form-data; boundary=$boundary"
 $LF = "`r`n" # Zeilenumbruch für HTTP
 
-# Dateiinformationen und Inhalt holen
-$fileItem = Get-Item -Path $FilePath
-try {
-    $fileBytes = [System.IO.File]::ReadAllBytes($FilePath)
-} catch {
-     Write-Error "Fehler beim Lesen der Datei '$FilePath': $($_.Exception.Message)"
-     return
+$bodyBytes = [System.Collections.Generic.List[byte]]::new()
+
+# 1) Das "destination" Feld anhängen (falls gesetzt)
+if (-not [string]::IsNullOrEmpty($Destination)) {
+    $destHeader = @(
+        "--$boundary",
+        "Content-Disposition: form-data; name=`"destination`"",
+        "",
+        $Destination
+    ) -join $LF
+    $bodyBytes.AddRange([System.Text.Encoding]::UTF8.GetBytes($destHeader + $LF))
 }
 
-# MIME-Typ bestimmen (Basis-Erkennung, kann verbessert werden)
-$mimeType = switch ($fileItem.Extension.ToLower()) {
-    ".mkv"  { "video/x-matroska" }
-    ".mp4"  { "video/mp4" }
-    ".avi"  { "video/x-msvideo" }
-    ".mov"  { "video/quicktime" }
-    ".wmv"  { "video/x-ms-wmv" }
-    ".ts"   { "video/mp2t" }
-    ".webm" { "video/webm" }
-    # Füge weitere Typen hinzu bei Bedarf
-    default { "application/octet-stream" } # Standard-Binärtyp
+# 2) Jede Datei als eigenen "files" Part anhängen
+foreach ($fp in $FilePaths) {
+    $fileItem = Get-Item -Path $fp
+    try {
+        $fileBytes = [System.IO.File]::ReadAllBytes($fp)
+    } catch {
+         Write-Error "Fehler beim Lesen der Datei '$fp': $($_.Exception.Message)"
+         return
+    }
+
+    # MIME-Typ bestimmen (Basis-Erkennung, kann verbessert werden)
+    $mimeType = switch ($fileItem.Extension.ToLower()) {
+        ".mkv"  { "video/x-matroska" }
+        ".mp4"  { "video/mp4" }
+        ".avi"  { "video/x-msvideo" }
+        ".mov"  { "video/quicktime" }
+        ".wmv"  { "video/x-ms-wmv" }
+        ".ts"   { "video/mp2t" }
+        ".webm" { "video/webm" }
+        ".mp3"  { "audio/mpeg" }
+        ".flac" { "audio/flac" }
+        ".wav"  { "audio/wav" }
+        default { "application/octet-stream" } # Standard-Binärtyp
+    }
+
+    $fileHeader = @(
+        "--$boundary",
+        # Der Parametername 'files' muss mit dem im C# Controller übereinstimmen
+        "Content-Disposition: form-data; name=`"files`"; filename=`"$($fileItem.Name)`"",
+        "Content-Type: $mimeType",
+        ""
+    ) -join $LF
+
+    $bodyBytes.AddRange([System.Text.Encoding]::UTF8.GetBytes($fileHeader + $LF))
+    $bodyBytes.AddRange($fileBytes)
+    $bodyBytes.AddRange([System.Text.Encoding]::UTF8.GetBytes($LF))
 }
 
-# Body-Teile als Text (außer Dateiinhalt)
-$bodyLines = @(
-    "--$boundary",
-    # Der Parametername 'file' muss mit dem im C# Controller übereinstimmen (IFormFile file)
-    "Content-Disposition: form-data; name=`"file`"; filename=`"$($fileItem.Name)`"",
-    "Content-Type: $mimeType",
-    "" # Leere Zeile als Trenner
-)
+# 3) Abschließendes Boundary anhängen
+$bodyBytes.AddRange([System.Text.Encoding]::UTF8.GetBytes("--$boundary--" + $LF))
 
-# Header-Teil des Bodys in Bytes umwandeln (UTF8)
-$bodyHeaderString = ($bodyLines -join $LF) + $LF
-$bodyHeaderBytes = [System.Text.Encoding]::UTF8.GetBytes($bodyHeaderString)
-
-# Footer-Teil des Bodys in Bytes umwandeln (UTF8)
-$bodyFooterString = $LF + "--$boundary--" + $LF
-$bodyFooterBytes = [System.Text.Encoding]::UTF8.GetBytes($bodyFooterString)
-
-# Alle Teile kombinieren: Header-Bytes + Datei-Bytes + Footer-Bytes
-$bodyBytes = $bodyHeaderBytes + $fileBytes + $bodyFooterBytes
+$finalBody = $bodyBytes.ToArray()
 # --- Ende Body-Erstellung ---
 
 
@@ -109,16 +133,12 @@ $bodyBytes = $bodyHeaderBytes + $fileBytes + $bodyFooterBytes
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
 try {
-    # Invoke-RestMethod verwenden, da es die Antwort oft besser verarbeitet
-    # Wir übergeben die manuell erstellten Bytes als Body
-    $response = Invoke-RestMethod -Uri $uploadUrl -Method Post -Headers $headers -ContentType $contentType -Body $bodyBytes
+    $response = Invoke-RestMethod -Uri $uploadUrl -Method Post -Headers $headers -ContentType $contentType -Body $finalBody
 
     $stopwatch.Stop()
     Write-Host "`n--- Server Antwort (Dauer: $($stopwatch.Elapsed.TotalSeconds)s) ---"
-    # Invoke-RestMethod gibt bei Erfolg oft direkt den Body-Inhalt zurück (hier erwarten wir Text)
-    Write-Host $response
+    $response | ConvertTo-Json -Depth 5 | Write-Host
     Write-Host "----------------------------------"
-    # Da Invoke-RestMethod bei Fehlern eine Exception wirft, ist der Code hier = Erfolg (Status 2xx)
     Write-Host "Upload Befehl erfolgreich gesendet (Status 2xx). Prüfe Server-Logs und Dateisystem!" -ForegroundColor Green
 
 } catch {

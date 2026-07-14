@@ -20,13 +20,23 @@
                 <h2>Plugin Settings</h2>
 
                 <div class="inputContainer">
-                    <label class="inputLabel inputLabelUnfocused" for="txtUploadPath">Target Upload Path:</label>
+                    <label class="inputLabel inputLabelUnfocused" for="txtUploadPath">Base Upload Path:</label>
                     <input id="txtUploadPath" name="UploadPath" type="text" is="emby-input" required="required"/>
                     <div class="fieldDescription">
-                        Enter the full path on the server where uploaded files should be saved (e.g., <code>/media/uploads</code> or <code>C:\Jellyfin\Uploads</code>).
-                        Ensure the Jellyfin server process has **write permissions** to this directory. This field is mandatory.
+                        Enter the full path on the server that all uploads are written under (e.g., <code>/media</code> or <code>C:\Jellyfin\Media</code>).
+                        Upload destinations (below) are sub-paths of this directory. Ensure the Jellyfin server process has **write permissions** to this directory. This field is mandatory.
                     </div>
                 </div>
+
+                <h2>Destinations</h2>
+                <p class="fieldDescription">
+                    These presets appear as a dropdown on the upload page. Each <strong>Path</strong> is relative to the Base Upload Path above
+                    (e.g. with a base of <code>/media</code>, a path of <code>movies</code> resolves to <code>/media/movies</code>).
+                </p>
+                <div id="destinationsList"></div>
+                <button is="emby-button" type="button" id="addDestination" class="raised block emby-button">
+                    <span>Add Destination</span>
+                </button>
 
                 <div>
                     <button is="emby-button" type="submit" class="raised button-submit block emby-button">
@@ -72,12 +82,76 @@
             // Populate the input field with the loaded value
             pageElement.querySelector('#txtUploadPath').value = config.UploadPath || ''; // Use empty string as fallback
 
+            // Render the destinations list
+            renderDestinations(pageElement, config.Destinations || []);
+
             // (Optional) Dynamically adjust the displayed link if needed?
             // Usually the relative link /Plugins/... is correct.
             // pageElement.querySelector('#uploadPageLink').href = ApiClient.serverAddress() + '/Plugins/MediaUploader/Page';
 
             Dashboard.hideLoadingMsg(); // Hide loading indicator
         });
+    }
+
+    // Renders the editable list of destination presets
+    function renderDestinations(pageElement, destinations) {
+        var container = pageElement.querySelector('#destinationsList');
+        container.innerHTML = '';
+
+        destinations.forEach(function (dest, index) {
+            var row = document.createElement('div');
+            row.className = 'destRow';
+            row.style.display = 'flex';
+            row.style.gap = '8px';
+            row.style.marginBottom = '8px';
+            row.style.alignItems = 'center';
+
+            var nameInput = document.createElement('input');
+            nameInput.type = 'text';
+            nameInput.is = 'emby-input';
+            nameInput.placeholder = 'Name (e.g. Movies)';
+            nameInput.value = dest.Name || '';
+            nameInput.dataset.index = index;
+            nameInput.dataset.field = 'Name';
+            nameInput.style.flex = '1';
+
+            var pathInput = document.createElement('input');
+            pathInput.type = 'text';
+            pathInput.is = 'emby-input';
+            pathInput.placeholder = 'Path (relative, e.g. movies)';
+            pathInput.value = dest.Path || '';
+            pathInput.dataset.index = index;
+            pathInput.dataset.field = 'Path';
+            pathInput.style.flex = '1';
+
+            var removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.setAttribute('is', 'emby-button');
+            removeBtn.className = 'raised emby-button';
+            removeBtn.textContent = 'Remove';
+            removeBtn.addEventListener('click', function () {
+                var list = readDestinations(pageElement);
+                list.splice(index, 1);
+                renderDestinations(pageElement, list);
+            });
+
+            row.appendChild(nameInput);
+            row.appendChild(pathInput);
+            row.appendChild(removeBtn);
+            container.appendChild(row);
+        });
+    }
+
+    // Reads the current destinations from the DOM
+    function readDestinations(pageElement) {
+        var rows = pageElement.querySelectorAll('#destinationsList .destRow');
+        var result = [];
+        rows.forEach(function (row) {
+            var name = row.querySelector('input[data-field="Name"]').value.trim();
+            var path = row.querySelector('input[data-field="Path"]').value.trim();
+            result.push({ Name: name, Path: path });
+        });
+        return result;
     }
 
     // Function to save the configuration data from the form
@@ -87,6 +161,7 @@
         ApiClient.getPluginConfiguration(MediaUploaderConfig.pluginUniqueId).then(function (config) {
             // Read the value from the input field and update the config object
             config.UploadPath = pageElement.querySelector('#txtUploadPath').value;
+            config.Destinations = readDestinations(pageElement);
 
             // Send the updated configuration back to the server
             ApiClient.updatePluginConfiguration(MediaUploaderConfig.pluginUniqueId, config).then(function (result) {
@@ -94,6 +169,14 @@
             });
         });
     }
+
+    // Add destination button
+    document.querySelector('#addDestination').addEventListener('click', function () {
+        var pageElement = this.closest('.page');
+        var list = readDestinations(pageElement);
+        list.push({ Name: '', Path: '' });
+        renderDestinations(pageElement, list);
+    });
 
     // Event listener for when the configuration page is shown
     document.querySelector('#mediaUploaderConfigPage').addEventListener('pageshow', function () {

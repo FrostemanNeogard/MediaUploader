@@ -13,9 +13,12 @@ The target directory for uploads must be configured in the plugin settings.
 
 ## Features
 
-* Direct file upload via HTTP POST request.
+* Direct file upload via HTTP POST request (supports multiple files in one request).
 * Standalone HTML upload page accessible via a direct link.
-* Configurable target directory for uploads via the admin dashboard.
+* Configurable **base** upload directory plus a list of named destination presets (e.g. Movies, Shows) selectable on the upload page.
+* Upload many files at once, or upload an entire **folder** while preserving its relative structure.
+* Optional subfolder field so files land exactly where you want (e.g. `Show Name/Season 1`).
+* A library scan is queued automatically after a successful upload so new files are picked up.
 * Basic progress bar during upload on the standalone page.
 * Option to save API Key in the browser's local storage (use with caution).
 
@@ -59,9 +62,10 @@ After installing the plugin and restarting Jellyfin:
 1.  Navigate to your Jellyfin Dashboard.
 2.  Go to **Plugins** in the sidebar.
 3.  Find **"Media Uploader"** in the list (under "Installed") and click on it (or the settings/three-dot icon next to it).
-4.  **Set the Target Upload Path:** You **must** enter the full path to a directory on your server where you want uploaded files to be saved (e.g., `/srv/jellyfin/uploads` or `D:\Media\Uploads`).
-    * **Crucially:** Ensure the user account running the Jellyfin server process has **write permissions** for this directory! This field is mandatory.
-5.  Click **Save**.
+4.  **Set the Base Upload Path:** You **must** enter the full path to a directory on your server that all uploads are written under (e.g., `/media` or `D:\Media`).
+     * **Crucially:** Ensure the user account running the Jellyfin server process has **write permissions** for this directory (and the sub-directories you target)! This field is mandatory.
+5.  **Configure Destinations (optional but recommended):** Add named presets under the *Destinations* section. Each **Path** is relative to the Base Upload Path above. For example, with a base of `/media`, a destination named `Movies` with path `movies` resolves to `/media/movies`, and `Shows` with path `shows` resolves to `/media/shows`.
+6.  Click **Save**.
 6.  On the same settings page, you will find the direct link to the standalone upload page.
 
 ## Usage (Direct Upload Page)
@@ -71,9 +75,10 @@ After installing the plugin and restarting Jellyfin:
 3.  **Open the Upload Page:** Navigate to the bookmarked link.
 4.  **Enter API Key:** Paste your generated API Key into the input field. You can optionally check the box to save the key in your browser's local storage for next time.
     * <span style="color:red;">**Security Warning:**</span> Saving API Keys in local storage is less secure. Only use this feature in trusted environments on private computers. For higher security, use a password manager and paste the key each time.
-5.  **Select File:** Choose the media file you want to upload.
-6.  **Start Upload:** Click the "Start Upload" button. You should see a progress bar.
-7.  Wait for the success or error message. Uploaded files will be saved to the directory configured by the administrator.
+5.  **Select Destination:** Choose a preset from the *Destination* dropdown (loaded from the plugin configuration), or pick *Custom...* to type a relative path. Use the *Subfolder* field to add an extra sub-path (e.g. `My Movie (2024)` or `Show Name/Season 1`).
+6.  **Select Files or Folder:** Click the file input to choose one or more files. Check *"Upload a folder (preserve its structure)"* to select an entire folder; its relative layout is kept when written to the server.
+7.  **Start Upload:** Click the "Start Upload" button. You should see a progress bar and, once finished, a summary of how many files were uploaded (and any that failed).
+8.  Uploaded files are written to `<Base Upload Path>/<Destination>/<Subfolder>/<file>` and a library scan is queued automatically.
 
 ## Building from Source (Optional)
 
