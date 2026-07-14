@@ -12,7 +12,7 @@
                 "changelog": "- Multiple file uploads and folder (batch) uploads\n- Configurable base upload path with user-defined destination presets\n- Optional subfolder per upload\n- Automatic library scan after upload",
                 "targetAbi": "10.10.0.0",
                 "sourceUrl": "https://github.com/FrostemanNeogard/media-uploader-improved/releases/download/v1.0.0/Jellyfin.Plugin.MediaUploader_1.0.0.0.zip",
-                "checksum": "6f2094dcd99f62360745f4b989efafc5",
+                "checksum": "3e642403d82c33caeebbbf18813be62c",
                 "timestamp": "2026-07-14T22:00:00Z"
             }
         ]
