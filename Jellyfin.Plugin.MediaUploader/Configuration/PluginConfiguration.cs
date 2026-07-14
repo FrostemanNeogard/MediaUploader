@@ -23,12 +23,9 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <summary>
     /// Gets or sets the list of selectable destination presets shown on the upload page.
     /// Each destination's <see cref="DestinationConfig.Path"/> is relative to <see cref="UploadPath"/>.
+    /// The list starts empty; the user defines all destinations themselves in the plugin settings.
     /// </summary>
-    public List<DestinationConfig> Destinations { get; set; } =
-    [
-        new DestinationConfig { Name = "Movies", Path = "movies" },
-        new DestinationConfig { Name = "Shows", Path = "shows" },
-    ];
+    public List<DestinationConfig> Destinations { get; set; } = new List<DestinationConfig>();
 #pragma warning restore CA1002
 #pragma warning restore CA2227
 }

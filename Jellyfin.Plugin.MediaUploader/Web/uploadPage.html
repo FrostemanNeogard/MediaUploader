@@ -77,7 +77,7 @@
 <body>
 <div class="container">
     <h1>Media Uploader</h1>
-    <p class="hint">Upload one or more media files (or a whole folder) directly to your Jellyfin server.</p>
+    <p class="hint">Upload one or more media files, or batch-upload a whole folder, directly to your Jellyfin server.</p>
 
     <div>
         <label for="apiKey">Jellyfin API Key:</label>
@@ -108,7 +108,7 @@
         <input type="file" id="fileInput" multiple accept="video/*,audio/*,.mkv,.mp4,.avi,.mov,.wmv,.ts,.webm,.flac,.mp3,.wav,.aac,.ogg">
         <div class="checkbox-container">
             <input type="checkbox" id="folderModeCheckbox">
-            <label for="folderModeCheckbox">Upload a folder (preserve its structure)</label>
+            <label for="folderModeCheckbox">Batch upload a folder (uploads all video files directly inside the selected folder; ignores subfolders and non-video files)</label>
         </div>
         <div id="fileList"></div>
     </div>
@@ -141,6 +141,8 @@
     const fileList = document.getElementById('fileList');
 
     const LS_API_KEY = 'mediaUploaderPluginApiKey'; // Eindeutiger Schlüssel für LocalStorage
+    const LS_API_KEY_SAVE = 'mediaUploaderPluginApiKeySave'; // Speichert die "Save"-Präferenz
+    const LS_FOLDER_MODE = 'mediaUploaderPluginFolderMode'; // Speichert den Ordner-Modus
 
     // --- Hilfsfunktion für Statusanzeige ---
     function showStatus(message, type = 'info') {
@@ -151,20 +153,24 @@
     // --- API Key Laden/Setzen ---
     function loadApiKey() {
         const savedKey = localStorage.getItem(LS_API_KEY);
+        const savePref = localStorage.getItem(LS_API_KEY_SAVE);
         if (savedKey) {
             apiKeyInput.value = savedKey;
-            saveApiKeyCheckbox.checked = true;
+        }
+        // Restore the checkbox to the user's last choice (default: checked only if a key is stored)
+        saveApiKeyCheckbox.checked = savePref === null ? !!savedKey : savePref === 'true';
+        if (savedKey) {
             loadDestinations(savedKey);
-        } else {
-            saveApiKeyCheckbox.checked = false;
         }
     }
 
     function handleApiKeySave(apiKey) {
         if (saveApiKeyCheckbox.checked) {
             localStorage.setItem(LS_API_KEY, apiKey);
+            localStorage.setItem(LS_API_KEY_SAVE, 'true');
         } else {
             localStorage.removeItem(LS_API_KEY);
+            localStorage.setItem(LS_API_KEY_SAVE, 'false');
         }
     }
 
@@ -219,20 +225,46 @@
         return dest;
     }
 
+    // --- Dateifilter (nur im Ordner-Modus) ---
+    const VIDEO_EXTENSIONS = ['mkv','mp4','avi','mov','wmv','ts','webm','m2ts','m4v','flv','mpg','mpeg','ogv'];
+    function isVideoFile(name) {
+        const ext = name.split('.').pop().toLowerCase();
+        return VIDEO_EXTENSIONS.includes(ext);
+    }
+    function isTopLevelFile(file) {
+        // webkitRelativePath is like "Folder/file" for top-level items; subfolders add more segments.
+        const rel = file.webkitRelativePath || '';
+        return rel === '' || rel.split('/').length <= 2;
+    }
+    function getSelectedFiles() {
+        const all = Array.from(fileInput.files || []);
+        if (!folderModeCheckbox.checked) {
+            return all;
+        }
+        // Batch mode: only video files directly inside the selected folder (no subfolders).
+        return all.filter(f => isTopLevelFile(f) && isVideoFile(f.name));
+    }
+
     // --- Dateiliste anzeigen ---
     function updateFileList() {
-        const files = fileInput.files;
-        if (!files || files.length === 0) {
+        const all = Array.from(fileInput.files || []);
+        if (all.length === 0) {
             fileList.textContent = '';
             return;
         }
-        const max = 50;
-        let html = `<strong>${files.length}</strong> file(s) selected:<br>`;
-        for (let i = 0; i < Math.min(files.length, max); i++) {
-            html += escapeHtml(files[i].name) + '<br>';
+        const kept = getSelectedFiles();
+        let html = `<strong>${kept.length}</strong> file(s) will be uploaded`;
+        if (folderModeCheckbox.checked && all.length !== kept.length) {
+            const skipped = all.length - kept.length;
+            html += ` (${skipped} non-video or subfolder file(s) skipped)`;
         }
-        if (files.length > max) {
-            html += `… and ${files.length - max} more`;
+        html += ':<br>';
+        const max = 50;
+        for (let i = 0; i < Math.min(kept.length, max); i++) {
+            html += escapeHtml(kept[i].name) + '<br>';
+        }
+        if (kept.length > max) {
+            html += `… and ${kept.length - max} more`;
         }
         fileList.innerHTML = html;
     }
@@ -252,6 +284,7 @@
             fileInput.removeAttribute('webkitdirectory');
             fileInput.removeAttribute('directory');
         }
+        localStorage.setItem(LS_FOLDER_MODE, folderModeCheckbox.checked ? 'true' : 'false');
         fileInput.value = '';
         updateFileList();
     }
@@ -259,15 +292,25 @@
     // API Key beim Laden der Seite holen
     loadApiKey();
 
+    // Ordner-Modus aus dem gespeicherten Zustand wiederherstellen (behebt Refresh-Konflikt)
+    folderModeCheckbox.checked = localStorage.getItem(LS_FOLDER_MODE) === 'true';
+    applyFolderMode();
+
     apiKeyInput.addEventListener('input', () => loadDestinations(apiKeyInput.value.trim()));
     destinationSelect.addEventListener('change', updateCustomRow);
     folderModeCheckbox.addEventListener('change', applyFolderMode);
+    saveApiKeyCheckbox.addEventListener('change', () => {
+        localStorage.setItem(LS_API_KEY_SAVE, saveApiKeyCheckbox.checked ? 'true' : 'false');
+        if (!saveApiKeyCheckbox.checked) {
+            localStorage.removeItem(LS_API_KEY);
+        }
+    });
     fileInput.addEventListener('change', updateFileList);
 
     // --- Upload Button Klick-Event ---
-    uploadButton.addEventListener('click', () => {
+    uploadButton.addEventListener('click', async () => {
         const apiKey = apiKeyInput.value.trim();
-        const files = fileInput.files;
+        const files = getSelectedFiles();
 
         // --- Eingabevalidierung ---
         if (!apiKey) {
@@ -275,8 +318,8 @@
             apiKeyInput.focus();
             return;
         }
-        if (!files || files.length === 0) {
-            showStatus('Error: Please select at least one file.', 'error');
+        if (files.length === 0) {
+            showStatus('Error: No files selected (or all were filtered out).', 'error');
             fileInput.focus();
             return;
         }
@@ -284,83 +327,89 @@
         handleApiKeySave(apiKey); // API Key speichern/löschen
 
         const destination = getDestination();
-        const formData = new FormData();
-        formData.append('destination', destination);
-        for (let i = 0; i < files.length; i++) {
-            formData.append('files', files[i], files[i].name);
-        }
 
-        // --- UI Feedback & XMLHttpRequest ---
-        showStatus(`Uploading ${files.length} file(s) to "${destination || '(base path)'}"...`, 'info');
+        // --- UI Feedback ---
         statusDiv.style.display = 'block';
         progressContainer.style.display = 'block';
         progressBar.value = 0;
         progressText.textContent = '0%';
         uploadButton.disabled = true;
 
-        const xhr = new XMLHttpRequest();
-        const uploadUrl = '/Plugins/MediaUploader/Upload';
+        const failed = await uploadAll(files, apiKey, destination);
 
-        xhr.upload.addEventListener('progress', (event) => {
-            if (event.lengthComputable) {
-                const percentComplete = Math.round((event.loaded / event.total) * 100);
-                progressBar.value = percentComplete;
-                progressText.textContent = percentComplete + '%';
-            }
-        });
+        progressContainer.style.display = 'none';
+        uploadButton.disabled = false;
+        fileInput.value = '';
+        updateFileList();
 
-        xhr.addEventListener('load', () => {
-            progressContainer.style.display = 'none';
-            uploadButton.disabled = false;
-            fileInput.value = '';
-            updateFileList();
-
-            let result = null;
-            try { result = JSON.parse(xhr.responseText); } catch (e) { result = null; }
-
-            if (xhr.status >= 200 && xhr.status < 300 && result) {
-                const message = result.message || result.Message || 'Upload complete.';
-                const failed = result.failed || result.Failed || [];
-                let msg = message;
-                if (failed.length) {
-                    msg += '\nFailed:\n' + failed.join('\n');
-                }
-                showStatus(msg, failed.length ? 'error' : 'success');
-            } else {
-                let errorMessage = `Error ${xhr.status} (${xhr.statusText || 'Unknown Status'})`;
-                if (result && result.title) {
-                    errorMessage += `: ${result.title}`;
-                } else if (xhr.responseText) {
-                    try {
-                        const errorJson = JSON.parse(xhr.responseText);
-                        if (errorJson.errors && errorJson.errors[""] && errorJson.errors[""].length > 0) {
-                            errorMessage += `: ${errorJson.errors[""][0]}`;
-                        } else if (errorJson.title) {
-                            errorMessage += `: ${errorJson.title}`;
-                        } else {
-                            errorMessage += `: ${xhr.responseText}`;
-                        }
-                    } catch (e) {
-                        errorMessage += `: ${xhr.responseText}`;
-                    }
-                }
-                showStatus(errorMessage, 'error');
-            }
-        });
-
-        xhr.addEventListener('error', () => {
-            progressContainer.style.display = 'none';
-            uploadButton.disabled = false;
-            fileInput.value = '';
-            updateFileList();
-            console.error('Upload XHR Network Error');
-            showStatus('Network error or server unreachable.', 'error');
-        });
-
-        xhr.open('POST', uploadUrl, true);
-        xhr.setRequestHeader('X-Emby-Token', apiKey);
-        xhr.send(formData);
+        const okCount = files.length - failed.length;
+        let msg = `${okCount} of ${files.length} file(s) uploaded to "${destination || '(base path)'}".`;
+        if (failed.length) {
+            msg += '\nFailed:\n' + failed.join('\n');
+        }
+        showStatus(msg, failed.length ? 'error' : 'success');
     });
+
+    // Uploads files one at a time so very large or numerous uploads stay reliable and report progress per file.
+    async function uploadAll(files, apiKey, destination) {
+        const failed = [];
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            showStatus(`Uploading file ${i + 1} of ${files.length}: ${file.name}`, 'info');
+            try {
+                await uploadOne(file, apiKey, destination);
+            } catch (err) {
+                failed.push(`${file.name}: ${err.message || err}`);
+            }
+        }
+        return failed;
+    }
+
+    function uploadOne(file, apiKey, destination) {
+        return new Promise((resolve, reject) => {
+            const formData = new FormData();
+            formData.append('destination', destination);
+            formData.append('file', file, file.name);
+
+            const xhr = new XMLHttpRequest();
+            xhr.upload.addEventListener('progress', (event) => {
+                if (event.lengthComputable) {
+                    const pct = Math.round((event.loaded / event.total) * 100);
+                    progressBar.value = pct;
+                    progressText.textContent = pct + '%';
+                }
+            });
+
+            xhr.addEventListener('load', () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    resolve();
+                    return;
+                }
+                let msg = `Error ${xhr.status} (${xhr.statusText || 'Unknown Status'})`;
+                try {
+                    const errorJson = JSON.parse(xhr.responseText);
+                    if (errorJson.title) {
+                        msg += `: ${errorJson.title}`;
+                    } else if (errorJson.errors && errorJson.errors[""] && errorJson.errors[""].length > 0) {
+                        msg += `: ${errorJson.errors[""][0]}`;
+                    } else if (xhr.responseText) {
+                        msg += `: ${xhr.responseText}`;
+                    }
+                } catch (e) {
+                    if (xhr.responseText) msg += `: ${xhr.responseText}`;
+                }
+                reject(new Error(msg));
+            });
+
+            xhr.addEventListener('error', () => {
+                reject(new Error('Network error or server unreachable.'));
+            });
+
+            xhr.open('POST', '/Plugins/MediaUploader/Upload', true);
+            xhr.setRequestHeader('X-Emby-Token', apiKey);
+            xhr.send(formData);
+        });
+    }
 </script>
 </body>
 </html>

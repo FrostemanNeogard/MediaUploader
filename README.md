@@ -15,7 +15,7 @@ The target directory for uploads must be configured in the plugin settings.
 
 * Direct file upload via HTTP POST request (supports multiple files in one request).
 * Standalone HTML upload page accessible via a direct link.
-* Configurable **base** upload directory plus a list of named destination presets (e.g. Movies, Shows) selectable on the upload page.
+* Configurable **base** upload directory plus a user-defined list of named destination presets selectable on the upload page.
 * Upload many files at once, or upload an entire **folder** while preserving its relative structure.
 * Optional subfolder field so files land exactly where you want (e.g. `Show Name/Season 1`).
 * A library scan is queued automatically after a successful upload so new files are picked up.
@@ -64,7 +64,7 @@ After installing the plugin and restarting Jellyfin:
 3.  Find **"Media Uploader"** in the list (under "Installed") and click on it (or the settings/three-dot icon next to it).
 4.  **Set the Base Upload Path:** You **must** enter the full path to a directory on your server that all uploads are written under (e.g., `/media` or `D:\Media`).
      * **Crucially:** Ensure the user account running the Jellyfin server process has **write permissions** for this directory (and the sub-directories you target)! This field is mandatory.
-5.  **Configure Destinations (optional but recommended):** Add named presets under the *Destinations* section. Each **Path** is relative to the Base Upload Path above. For example, with a base of `/media`, a destination named `Movies` with path `movies` resolves to `/media/movies`, and `Shows` with path `shows` resolves to `/media/shows`.
+5.  **Configure Destinations:** Add the named presets you want under the *Destinations* section (the list starts empty). Each **Path** is relative to the Base Upload Path above. For example, with a base of `/media`, a destination named `Movies` with path `movies` resolves to `/media/movies`, and `Shows` with path `shows` resolves to `/media/shows`.
 6.  Click **Save**.
 6.  On the same settings page, you will find the direct link to the standalone upload page.
 

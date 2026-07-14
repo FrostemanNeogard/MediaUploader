@@ -32,6 +32,11 @@ namespace Jellyfin.Plugin.MediaUploader
         private readonly IFileSystem _fileSystem;
         private readonly ILibraryManager _libraryManager;
 
+        // Debounce library scans so sequential per-file uploads don't queue a full scan each time.
+        private static readonly TimeSpan ScanDebounceInterval = TimeSpan.FromSeconds(30);
+        private static readonly object ScanLock = new object();
+        private static DateTime _lastScanUtc = DateTime.MinValue;
+
         /// <summary>
         /// Initializes a new instance of the <see cref="MediaUploadController"/> class.
         /// </summary>
@@ -183,11 +188,15 @@ namespace Jellyfin.Plugin.MediaUploader
                     return StatusCode(StatusCodes.Status500InternalServerError, "No files could be saved. Check server logs and permissions.");
                 }
 
-                // --- 4. Trigger a library scan (best effort) so new files are picked up ---
+                // --- 4. Trigger a library scan (best effort, debounced) so new files are picked up ---
+                // Debounced because sequential per-file uploads would otherwise queue a full scan per file.
                 try
                 {
-                    _logger.LogInformation("Media Uploader: Queuing a library scan.");
-                    _libraryManager.QueueLibraryScan();
+                    if (ShouldQueueLibraryScan())
+                    {
+                        _logger.LogInformation("Media Uploader: Queuing a library scan.");
+                        _libraryManager.QueueLibraryScan();
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -283,6 +292,27 @@ namespace Jellyfin.Plugin.MediaUploader
                 .Select(segment => _fileSystem.GetValidFilename(segment));
 
             return Path.Combine(safeSegments.ToArray());
+        }
+
+        /// <summary>
+        /// Returns true at most once per <see cref="ScanDebounceInterval"/> so that a burst of
+        /// uploads (e.g. one request per file) does not queue a full library scan for every file.
+        /// </summary>
+        /// <returns>True when a scan should be queued now.</returns>
+        private static bool ShouldQueueLibraryScan()
+        {
+            var now = DateTime.UtcNow;
+            bool shouldQueue;
+            lock (ScanLock)
+            {
+                shouldQueue = now - _lastScanUtc >= ScanDebounceInterval;
+                if (shouldQueue)
+                {
+                    _lastScanUtc = now;
+                }
+            }
+
+            return shouldQueue;
         }
 
         /// <summary>
