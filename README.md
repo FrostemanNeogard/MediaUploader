@@ -1,4 +1,4 @@
-# Media Uploader Plugin for Jellyfin
+# Media Uploader Improved Plugin for Jellyfin
 
 A plugin for [Jellyfin](https://jellyfin.org) that lets users upload media files directly from an interactive UI.
 
@@ -21,12 +21,12 @@ Uploads are written under a configurable **base path**, into a chosen **destinat
 **Method A — Plugin Repository (recommended for updates)**
 
 1. In the Jellyfin Dashboard, go to **Plugins → Repositories** and click **"Manage Repositories"**, then click **+ New Repository**.
-2. For the **"Repository Name"** field, set it to anything you want (e.g. "Media Uploader").
+2. For the **"Repository Name"** field, set it to anything you want (e.g. "Media Uploader Improved").
 3. For the **"Repository URL"** field, enter the following URL: 
    ```
    https://raw.githubusercontent.com/FrostemanNeogard/MediaUploader/main/manifest.json
    ```
-4. Click **"Add"** to save your new repository, then head back to the **Plugins** tab. Refresh, search for **Media Uploader**, and click **Install**.
+4. Click **"Add"** to save your new repository, then head back to the **Plugins** tab. Refresh, search for **Media Uploader Improved**, and click **Install**.
 5. Restart your Jellyfin server when prompted.
 
 **Method B — Manual Installation**
@@ -44,7 +44,7 @@ Uploads are written under a configurable **base path**, into a chosen **destinat
 
 After installing and restarting:
 
-1. Jellyfin Dashboard → **Plugins** → **Media Uploader** → Settings.
+1. Jellyfin Dashboard → **Plugins** → **Media Uploader Improved** → Settings.
 2. **Base Upload Path** (required): the full server path that all uploads are written under (e.g. `/media` or `D:\Media`). The Jellyfin process must have **write** access to it (and to the sub-directories you target).
 3. **Destinations**: add the named presets you want (the list starts empty). Each **Path** is relative to the Base Upload Path. With a base of `/media`, a preset named `Movies` with path `movies` resolves to `/media/movies` on your server; `Shows` with path `shows` resolves to `/media/shows`.
 4. **Save**: Hit the blue **"Save"** button once you've added all your desired destionations (this can be chaned at any time through the **plugin settings** page).
@@ -53,7 +53,7 @@ After installing and restarting:
 ## Usage
 
 1. Open the upload page link from the plugin settings, either via the **"Go to Upload Page"** button, or by navigation to `{your_jellyfin_url}/Plugins/MediaUploader/Page`.
-2. **API Key**: paste a personal Jellyfin API key. You can get this by navigating to (Jellyfin Dashboard → API Keys → **+ New API Key**). Give it a fitting name, for example "media uploader".
+2. **API Key**: paste a personal Jellyfin API key. You can get this by navigating to (Jellyfin Dashboard → API Keys → **+ New API Key**). Give it a fitting name, for example "media uploader improved".
    * <span style="color:red;">**Security Warning:**</span> saving the key in local storage on the Upload Page is less secure; only do this on trusted, private computers. It is recommended to store this somewhere safe instead.
 3. **Files**: click to choose one or more files. Enable **Batch upload a folder** if you **instead** want to upload the top-level video files of a selected folder (subfolders and non-video files are skipped).
 4. **Destination**: pick a preset from the dropdown (loaded from the plugin configuration) or choose **Custom…** to type a relative path. Use **Subfolder** for an extra level (this is particularily useful for show discovery in Jellyfin, e.g. `Breaking Bad/Season 1`).

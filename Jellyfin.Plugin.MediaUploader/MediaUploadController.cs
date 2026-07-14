@@ -67,17 +67,17 @@ namespace Jellyfin.Plugin.MediaUploader
 #pragma warning restore SA1404
         public async Task<IActionResult> UploadFile()
         {
-            _logger.LogInformation("Media Uploader: UploadFile endpoint hit.");
+            _logger.LogInformation("Media Uploader Improved: UploadFile endpoint hit.");
 
             var configuredPath = Plugin.Instance?.Configuration.UploadPath;
             if (string.IsNullOrEmpty(configuredPath))
             {
-                _logger.LogError("Media Uploader: Upload path is not configured in plugin settings!");
+                _logger.LogError("Media Uploader Improved: Upload path is not configured in plugin settings!");
                 return StatusCode(StatusCodes.Status500InternalServerError, "Upload path is not configured in plugin settings.");
             }
 
             var baseDirectory = Path.GetFullPath(configuredPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-            _logger.LogInformation("Media Uploader: Using configured base directory: '{BaseDirectory}'", baseDirectory);
+            _logger.LogInformation("Media Uploader Improved: Using configured base directory: '{BaseDirectory}'", baseDirectory);
 
             try
             {
@@ -95,7 +95,7 @@ namespace Jellyfin.Plugin.MediaUploader
 
                 if (files.Count == 0)
                 {
-                    _logger.LogWarning("Media Uploader: No file uploaded.");
+                    _logger.LogWarning("Media Uploader Improved: No file uploaded.");
                     return BadRequest("No file uploaded.");
                 }
 
@@ -108,7 +108,7 @@ namespace Jellyfin.Plugin.MediaUploader
                 {
                     if (file == null || file.Length == 0)
                     {
-                        _logger.LogWarning("Media Uploader: Skipping empty file entry.");
+                        _logger.LogWarning("Media Uploader Improved: Skipping empty file entry.");
                         continue;
                     }
 
@@ -122,7 +122,7 @@ namespace Jellyfin.Plugin.MediaUploader
                         if (!fullTargetPath.StartsWith(basePrefix, StringComparison.OrdinalIgnoreCase))
                         {
                             _logger.LogError(
-                                "Media Uploader: Invalid target path generated. Attempted relative '{DestinationRelative}' + '{FileRelative}', resolved to '{ResolvedPath}', base directory '{BaseDirectory}'",
+                                "Media Uploader Improved: Invalid target path generated. Attempted relative '{DestinationRelative}' + '{FileRelative}', resolved to '{ResolvedPath}', base directory '{BaseDirectory}'",
                                 destinationRelative,
                                 fileRelative,
                                 fullTargetPath,
@@ -137,18 +137,18 @@ namespace Jellyfin.Plugin.MediaUploader
                             Directory.CreateDirectory(targetDir);
                         }
 
-                        _logger.LogInformation("Media Uploader: Saving '{FileName}' to '{FullTargetPath}'", file.FileName, fullTargetPath);
+                        _logger.LogInformation("Media Uploader Improved: Saving '{FileName}' to '{FullTargetPath}'", file.FileName, fullTargetPath);
                         await using (var fileStream = new FileStream(fullTargetPath, FileMode.Create, FileAccess.Write, FileShare.None))
                         {
                             await file.CopyToAsync(fileStream, CancellationToken.None).ConfigureAwait(false);
                         }
 
                         uploaded.Add(fullTargetPath);
-                        _logger.LogInformation("Media Uploader: File '{FileName}' saved successfully.", file.FileName);
+                        _logger.LogInformation("Media Uploader Improved: File '{FileName}' saved successfully.", file.FileName);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Media Uploader: Error saving file '{FileName}'", file.FileName);
+                        _logger.LogError(ex, "Media Uploader Improved: Error saving file '{FileName}'", file.FileName);
                         failed.Add(file.FileName);
                     }
                 }
@@ -162,13 +162,13 @@ namespace Jellyfin.Plugin.MediaUploader
                 {
                     if (ShouldQueueLibraryScan())
                     {
-                        _logger.LogInformation("Media Uploader: Queuing a library scan.");
+                        _logger.LogInformation("Media Uploader Improved: Queuing a library scan.");
                         _libraryManager.QueueLibraryScan();
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Media Uploader: Error requesting library validation.");
+                    _logger.LogError(ex, "Media Uploader Improved: Error requesting library validation.");
                 }
 
                 var result = new UploadResult
@@ -185,17 +185,17 @@ namespace Jellyfin.Plugin.MediaUploader
             }
             catch (IOException ioEx)
             {
-                _logger.LogError(ioEx, "Media Uploader: IO Error during upload process: {ErrorMessage}", ioEx.Message);
+                _logger.LogError(ioEx, "Media Uploader Improved: IO Error during upload process: {ErrorMessage}", ioEx.Message);
                 return StatusCode(StatusCodes.Status500InternalServerError, $"IO Error: {ioEx.Message}");
             }
             catch (UnauthorizedAccessException authEx)
             {
-                _logger.LogError(authEx, "Media Uploader: Permission denied during upload process: {ErrorMessage}", authEx.Message);
+                _logger.LogError(authEx, "Media Uploader Improved: Permission denied during upload process: {ErrorMessage}", authEx.Message);
                 return StatusCode(StatusCodes.Status403Forbidden, $"Permission denied: {authEx.Message}");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Media Uploader: Unexpected error processing file upload: {ErrorMessage}", ex.Message);
+                _logger.LogError(ex, "Media Uploader Improved: Unexpected error processing file upload: {ErrorMessage}", ex.Message);
                 return StatusCode(StatusCodes.Status500InternalServerError, $"Unexpected error uploading file: {ex.Message}");
             }
         }
@@ -204,7 +204,7 @@ namespace Jellyfin.Plugin.MediaUploader
         [Produces("text/html")]
         public IActionResult GetUploadPage()
         {
-            _logger.LogInformation("Media Uploader: Serving static upload page request.");
+            _logger.LogInformation("Media Uploader Improved: Serving static upload page request.");
             try
             {
                 var assembly = typeof(MediaUploadController).Assembly;
@@ -214,7 +214,7 @@ namespace Jellyfin.Plugin.MediaUploader
 
                 if (stream == null)
                 {
-                    _logger.LogError("Media Uploader: Could not find embedded resource: {ResourceName}. Check file exists, path/namespace, and Build Action='Embedded resource'.", resourceName);
+                    _logger.LogError("Media Uploader Improved: Could not find embedded resource: {ResourceName}. Check file exists, path/namespace, and Build Action='Embedded resource'.", resourceName);
                     return NotFound($"Resource not found: {resourceName}");
                 }
 
@@ -225,7 +225,7 @@ namespace Jellyfin.Plugin.MediaUploader
             }
             catch (Exception ex)
             {
-                 _logger.LogError(ex, "Media Uploader: Error serving static upload page");
+                 _logger.LogError(ex, "Media Uploader Improved: Error serving static upload page");
                  return StatusCode(StatusCodes.Status500InternalServerError, "Error serving upload page");
             }
         }

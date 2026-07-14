@@ -17,11 +17,11 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         Instance = this;
     }
 
-    public override string Name => "Media Uploader";
+    public override string Name => "Media Uploader Improved";
 
     public override string Description => "Allows uploading media files directly via the web interface.";
 
-    public override Guid Id => Guid.Parse("514d4276-bf23-4a85-b074-66b4cd38fd90");
+    public override Guid Id => Guid.Parse("ec712ab4-8ecb-4d34-8087-09db56f33d44");
 
     public static Plugin? Instance { get; private set; }
 

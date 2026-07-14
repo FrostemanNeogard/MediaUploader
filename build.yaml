@@ -1,6 +1,6 @@
 ---
-name: "Media Uploader"
-guid: "514d4276-bf23-4a85-b074-66b4cd38fd90"
+name: "Media Uploader Improved"
+guid: "ec712ab4-8ecb-4d34-8087-09db56f33d44"
 version: "1.0.0.0"
 targetAbi: "10.10.0.0"
 framework: "net8.0"
