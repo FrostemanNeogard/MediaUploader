@@ -1,16 +1,19 @@
 ---
 name: "Media Uploader"
 guid: "514d4276-bf23-4a85-b074-66b4cd38fd90"
-version: "1.0.0"
-targetAbi: "10.9.0.0"
+version: "1.0.0.0"
+targetAbi: "10.10.0.0"
 framework: "net8.0"
-overview: "Short description about your plugin"
+overview: "Upload media files (individually or in batches) to your Jellyfin server from an interactive UI"
 description: >
-  This is a longer description that can span more than one
-  line and include details about your plugin.
+  A Jellyfin plugin that lets users upload media files directly through a standalone web page with an interactive UI. Configure a base upload path and a set of named
+  destination presets; choose a destination (and optional subfolder) per upload. Supports
+  multiple files at once and batch-uploading a folder's top-level video files.
 category: "General"
-owner: "jellyfin"
+owner: "FrostemanNeogard"
 artifacts:
 - "Jellyfin.Plugin.MediaUploader.dll"
 changelog: >
-  changelog
+  - Multiple file uploads and folder (batch) uploads
+  - Configurable base upload path with user-defined destination presets
+  - Optional subfolder per upload
